@@ -31,9 +31,7 @@ Welcome to the Restaurant AI Assistant, an intelligent chatbot designed to enhan
 
 ## Demo
 
-Check out our AI Assistant in action:
-
-[![Restaurant AI Assistant Demo]]
+Check out our AI Assistant in action: [Restaurant AI Assistant Demo](https://www.loom.com/share/ccc6396a13fd441db8722b1f2caaa6eb?sid=7b4d657f-a040-4e4c-a448-f4570471157e)
 
 ## Set Up
 
