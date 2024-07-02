@@ -960,5 +960,5 @@ def chat():
     return response
 
 if __name__ == '__main__':
-    port = int(os.environ.get('FLASK_PORT', 8080))  # Change this to 5000
+    port = int(os.environ.get('FLASK_PORT', 10000))  # Change this to 5000
     app.run(host='0.0.0.0', port=port)
