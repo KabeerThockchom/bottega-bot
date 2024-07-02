@@ -9,7 +9,7 @@ COPY build ./build
 # Copy the Flask app and other necessary files
 COPY app.py .
 COPY requirements.txt .
-COPY customer_chatbot_new.db .
+COPY bottega_customer_chatbot.db .
 COPY customer_chatbot_new_memory.db .
 COPY .env .
 
