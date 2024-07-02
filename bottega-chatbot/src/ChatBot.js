@@ -260,7 +260,7 @@ const BytesThemedChatbot = () => {
         <h2 className="text-2xl font-bold gradient-text">
           Bottega Bot <span role="img" aria-label="robot">🤖</span> Bottega Restaurant AI
         </h2>
-        <p className="gradient-text text-sm mt-1">powered by Zorro AI</p>
+        <p className="gradient-text text-sm mt-1">created by Kabeer Thockchom</p>
       </div>
       <div className="gradient-separator"></div>
       <div className="flex-grow overflow-auto p-4" id="chat-container">

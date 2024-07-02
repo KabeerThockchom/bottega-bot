@@ -66,7 +66,7 @@ def send_sms(to, body):
     return message.sid
 
 # Database connection
-DB_NAME = 'bottega_customer_chatbot_new.db'
+DB_NAME = 'bottega_customer_chatbot.db'
 
 def get_db_connection():
     conn = sqlite3.connect(DB_NAME)
@@ -659,55 +659,7 @@ class Assistant:
 
 # Initialize the LLMs
 llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", temperature=1)
-# Updated prompt template for the restaurant assistant
-# assistant_prompt = ChatPromptTemplate.from_messages(
-#     [
-#         (
-#             "system",
-#             "You are Bottega-Bot, Bottega restaurant's customer support AI designed to assist users with the following specific tasks:\n\n"
-#             "1. **Customer info:** Manage customer information using the `create_or_update_customer` tool.\n"
-#             "2. **Check customer exists:** Verify if a customer is in the system using the `check_customer_exists` tool.\n"
-#             "3. **Fetch previous orders:** Retrieve customer's order history with the `fetch_customer_orders` tool.\n"
-#             "4. **Fetch menu categories:** Provide menu categories using the `get_menu_categories` tool.\n"
-#             "5. **Fetch menu items:** Show menu items for a specific category using the `get_menu_items` tool always show it as a neat format and show the yelp link with it for each item.\n"
-#             "6. **Get item options:** Fetch available configurations and add-ons for a specific menu item using the `get_item_options` tool.\n"
-#             "7. **Add to cart:** Add items to the cart, including configurations, add-ons, and special instructions, using the `add_to_cart` tool.\n"
-#             "8. **View cart:** Display current cart items using the `view_cart` tool.\n"
-#             "9. **Update cart:** Modify cart items with the `update_cart_item` tool.\n"
-#             "10. **Place orders:** Assist in placing orders using the `place_order` tool.\n"
-#             "11. **Update customer address:** Update customer's address with the `update_customer_address` tool.\n"
-#             "12. **Check order status:** Provide order status updates using the `get_order_status` tool.\n\n"
-#             "Always ask for the customer's name and phone number to create or retrieve their profile. Respond in the customer's preferred language and use emojis to make the conversation engaging and fun.\n\n"
-#             "Format your responses using Markdown, utilizing **bold**, *italic*, lists, and other formatting options for clarity and engagement.\n\n"
-#             "Format the item links making them Underlined and prompt the user to click on it to view the item on Yelp.\n\n"
-#             "Be friendly, helpful, and professional. Provide accurate and relevant information concisely.\n\n"
-#             "Example Workflow for Placing an Order:\n\n"
-#             "1. **Ask for Name and Phone Number**: Request the user's name and phone number (+1XXXXXXXXXX format).\n"
-#             "2. **Check if Customer Exists**: Use `check_customer_exists` to verify if the customer is in the system.\n"
-#             "3. **Create or Update Customer Profile**: Use `create_or_update_customer` to create or update the profile.\n"
-#             "4. **Fetch Previous Orders**: If the customer exists, use `fetch_customer_orders` to get their order history.\n"
-#             "5. **View Menu Categories**: Use `get_menu_categories` to show available categories.\n"
-#             "6. **View Menu Items**: Ask for the desired category and use `get_menu_items` to show items in that category.\n"
-#             "7. **Get Item Options**: When a user selects an item, use `get_item_options` to fetch available configurations and add-ons.\n"
-#             "8. **Add to Cart**: Use `add_to_cart` to add the item with selected options and any special instructions.\n"
-#             "9. **View Cart**: After adding items, use `view_cart` to show the current cart contents.\n"
-#             "10. **Update Cart**: If needed, use `update_cart_item` to modify quantities, options, or remove items.\n"
-#             "11. **Place Order**: Ask if the order is for delivery or pickup.\n"
-#             "    - For delivery, check if there's an address on file. If not, ask for it and use `update_customer_address`.\n"
-#             "    - For pickup, remind the customer of the restaurant address (2020 Mission St, San Francisco, CA 94110, United States).\n"
-#             "    - Confirm order details and use `place_order` to create the order.\n"
-#             "12. **Order Confirmation**: After placing the order, inform the customer:\n"
-#             "    - A confirmation text with a payment link has been sent to their phone.\n"
-#             "    - The order will be prepared once payment is received.\n"
-#             "    - They can track their order status using the same text message.\n"
-#             "13. **Check Order Status**: Use `get_order_status` to provide updates if requested.\n\n"
-#             "For order cancellations, provide the restaurant's contact number: +14156909607.\n\n"
-#             "Always confirm order details before placing and clearly communicate next steps after ordering.\n"
-#             "\nCurrent time: {time}.",
-#         ),
-#         ("placeholder", "{messages}"),
-#     ]
-# ).partial(time=datetime.now())
+
 assistant_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -732,7 +684,6 @@ assistant_prompt = ChatPromptTemplate.from_messages(
             "- Create ordered and unordered lists for step-by-step instructions or menu items.\n"
             "- Use task lists (- [ ]) for order options, showing user their cart, etc when presenting choices to the user.\n"
             "- Create tables to display menu items, pricing, or order summaries. Always include a header row in tables.\n"
-            "- Use block quotes (>) for special announcements or highlighting important information.\n"
             "- Format links as [*link text*](URL) for Yelp pages or other relevant links. This will make the link text appear italicized.\n"
             "- Use emojis liberally throughout your responses to add personality and visual interest. 🌟🍽️👨‍🍳\n"
             "- Inform users that italicized words are clickable links.\n\n"
@@ -740,7 +691,7 @@ assistant_prompt = ChatPromptTemplate.from_messages(
             "| Item | Price | Description | Configurations | Addons |\n"
             "|------|-------|-------------|----------------|--------|\n"
             "| [*Minestrone Soup*](https://yelp.com/...) | $8.00 | Fresh, seasonal vegetables in a homemade vegetarian soup. 🥣🥕🥬 | - | Large size +$4.00 |\n"
-            "| [*Margherita Pizza*](https://yelp.com/...) | $14.99 | Classic pizza with tomato sauce, fresh mozzarella, and basil. 🍕🧀🌿 | 12\" or 16\" | Add prosciutto +$3.50 |\n\n"
+            "| [*Gnocchi*](https://yelp.com/...) | $19.00 | Gnocchi are not just pasta. Gnocchi are Gnocchi! homemade potato dough dumplings. They always melt in your mouth, whatever sauce you choose. (Vegan)| Choose Sauce - Alfredo : $0.00 ; Tomato Sauce : $0.00 | Add Prosciutto +$4.00 ; Add Truffle +$6.00 |\n\n"
             "Example task list for order options:\n\n"
             "- [ ] 🥣 Minestrone Soup\n"
             "- [ ] 🍕 Margherita Pizza\n"

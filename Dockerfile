@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose the port on which the Flask app will run
-EXPOSE 8080
+EXPOSE 10000
 
 # Set the entry point command to run the Flask app
 CMD ["python", "app.py"]
