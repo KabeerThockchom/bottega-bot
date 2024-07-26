@@ -1,3 +1,8 @@
+from openai import OpenAI
+import assemblyai as aai
+import os
+import tempfile
+
 # Standard library imports
 from datetime import datetime
 import getpass
@@ -14,6 +19,7 @@ from typing_extensions import TypedDict
 
 # Langchain imports
 from langchain_anthropic import ChatAnthropic
+from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.messages import ToolMessage
@@ -32,7 +38,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from twilio.rest import Client
 
 # Flask imports
-from flask import Flask, request, Response, stream_with_context, jsonify, session, send_from_directory, render_template, url_for, render_template, Blueprint
+from flask import Flask, request, Response, stream_with_context, jsonify, session, send_from_directory, render_template, url_for, render_template, Blueprint, send_file
 from flask_cors import CORS
 import uuid
 import json
@@ -50,6 +56,64 @@ from geopy.distance import geodesic
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Set up OpenAI client
+openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+# Set up AssemblyAI client
+aai.settings.api_key = os.environ["ASSEMBLYAI_API_KEY"]
+transcriber = aai.Transcriber()
+
+
+import asyncio
+import io
+
+async def text_to_speech(text):
+    response = await openai_client.audio.speech.create(
+        model="tts-1",
+        voice="shimmer",
+        input=text
+    )
+    
+    # Create a temporary file to store the audio
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
+        buffer = io.BytesIO()
+        async for chunk in response.iter_bytes():
+            buffer.write(chunk)
+        buffer.seek(0)
+        temp_file.write(buffer.getvalue())
+        return temp_file.name
+
+# Wrapper function for asynchronous call
+def text_to_speech_sync(text):
+    audio_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio')
+    os.makedirs(audio_directory, exist_ok=True)
+    
+    audio_filename = f"{uuid.uuid4()}.mp3"
+    audio_path = os.path.join(audio_directory, audio_filename)
+    
+    response = openai_client.audio.speech.create(
+        model="tts-1",
+        voice="alloy",
+        input=text
+    )
+    
+    with open(audio_path, 'wb') as audio_file:
+        for chunk in response.iter_bytes():
+            audio_file.write(chunk)
+    
+    return audio_filename
+
+# def speech_to_text(audio_file):
+#     transcript = transcriber.transcribe(audio_file)
+#     return transcript.text
+def speech_to_text(audio_file_path):
+    with open(audio_file_path, "rb") as audio_file:
+        transcription = openai_client.audio.transcriptions.create(
+            model="whisper-1", 
+            file=audio_file
+        )
+    return transcription.text
 
 #Twilio credentials
 
@@ -702,8 +766,8 @@ class Assistant:
 
 # Initialize the LLMs
 llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", temperature=1)
-# llm = ChatOpenAI(model="gpt-4o-mini",temperature=1)
-
+# llm = ChatGroq(model="llama-3.1-70b-versatile", temperature=1)
+# llm = ChatOpenAI(model="gpt-4o-mini", temperature=1)
 assistant_prompt = ChatPromptTemplate.from_messages(
     [
         (
@@ -744,7 +808,7 @@ assistant_prompt = ChatPromptTemplate.from_messages(
             "Be friendly, helpful, and professional. Provide accurate and relevant information concisely, while keeping the tone light and enjoyable with emojis. 😄👍\n\n"
             "Remember to inform users that italicized words in your messages are clickable links to more information.\n"
             "Example Workflow for Placing an Order:\n\n"
-            "1. **Ask for Name and Phone Number**: Request the user's name and phone number (+1XXXXXXXXXX format). 📞👤\n"
+            "1. **Ask for Name and Phone Number**: Request the user's name and phone number. 📞👤\n"
             "2. **Check if Customer Exists**: Use `check_customer_exists` to verify if the customer is in the system. 🔍\n"
             "3. **Create or Update Customer Profile**: Use `create_or_update_customer` to create or update the profile. ✏️\n"
             "4. **Fetch Previous Orders**: If the customer exists, use `fetch_customer_orders` to get their order history. 📜\n"
@@ -876,49 +940,293 @@ def _print_event(event, _printed: set, max_length=100000):
         response = str(event)
     return response
 
-# Define a route to handle chat messages
+# @app.route('/chat', methods=['POST'])
+# def chat():
+#     if request.content_type.startswith('multipart/form-data'):
+#         # Handle voice input
+#         audio_file = request.files.get('audio')
+#         thread_id = request.form.get('thread_id')
+#         is_voice_input = True
+#         if not audio_file:
+#             return jsonify({"error": "No audio file provided"}), 400
+        
+#         # Save the audio file temporarily
+#         temp_audio_path = tempfile.mktemp(suffix=".wav")
+#         audio_file.save(temp_audio_path)
+        
+#         # Convert speech to text
+#         user_input = speech_to_text(temp_audio_path)
+        
+#         # Remove the temporary file
+#         os.remove(temp_audio_path)
+#     else:
+#         # Handle text input
+#         data = request.json
+#         user_input = data.get('message')
+#         thread_id = data.get('thread_id')
+#         is_voice_input = data.get('is_voice_input', False)
+
+#     if not user_input:
+#         return jsonify({"error": "No message provided"}), 400
+
+#     if not thread_id:
+#         thread_id = str(uuid.uuid4())
+
+#     config = {
+#         "configurable": {
+#             "thread_id": thread_id,
+#         }
+#     }
+
+#     _printed = set()
+#     events = graph.stream(
+#         {"messages": ("user", user_input)}, config, stream_mode="values"
+#     )
+
+#     full_response = ""
+#     ai_response = ""
+#     requires_approval = False
+#     try:
+#         for event in events:
+#             event_text = _print_event(event, _printed)
+#             if event_text:
+#                 full_response += event_text + "\n"
+#                 print(event_text)
+#                 logging.info(event_text)
+                
+#                 if "Ai Message" in event_text:
+#                     ai_response = event_text.split("Ai Message")[-1].strip()
+
+#         snapshot = graph.get_state(config)
+#         if snapshot.next:
+#             requires_approval = True
+#             user_input = data.get('confirmation', 'y')
+#             if user_input.strip() == "y":
+#                 result = graph.invoke(None, config)
+#             else:
+#                 result = graph.invoke(
+#                     {
+#                         "messages": [
+#                             ToolMessage(
+#                                 tool_call_id=event["messages"][-1].tool_calls[0]["id"],
+#                                 content=f"API call denied by user. Reasoning: '{user_input}'. Continue assisting, accounting for the user's input.",
+#                             )
+#                         ]
+#                     },
+#                     config,
+#                 )
+#             for event in result:
+#                 event_text = _print_event(event, _printed)
+#                 if event_text:
+#                     full_response += event_text + "\n"
+#                     print(event_text)
+#                     logging.info(event_text)
+                    
+#                     if "Ai Message" in event_text:
+#                         ai_response = event_text.split("Ai Message")[-1].strip()
+
+#     except Exception as e:
+#         logging.error(f"Error in chat route: {str(e)}")
+#         return jsonify({"error": "An error occurred processing your request"}), 500
+
+#     if not ai_response:
+#         ai_response = full_response
+
+#     # Extract the text content from ai_response
+#     if isinstance(ai_response, str):
+#         text_to_speak = ai_response
+#     elif isinstance(ai_response, list) and ai_response and 'text' in ai_response[0]:
+#         text_to_speak = ai_response[0]['text']
+#     else:
+#         text_to_speak = str(ai_response)
+
+#     # Generate speech from the text response
+#     audio_filename = text_to_speech_sync(text_to_speak)
+
+#     response = jsonify({
+#         "messages": ai_response,
+#         "thread_id": thread_id,
+#         "requires_approval": requires_approval,
+#         "audio_file": audio_filename
+#     })
+#     response.headers['Content-Type'] = 'application/json; charset=utf-8'
+#     return response
+
+# @app.route('/chat', methods=['POST'])
+# def chat():
+#     try:
+#         if request.content_type.startswith('multipart/form-data'):
+#             # Handle voice input
+#             audio_file = request.files.get('audio')
+#             thread_id = request.form.get('thread_id')
+#             is_voice_input = True
+#             if not audio_file:
+#                 return jsonify({"error": "No audio file provided"}), 400
+            
+#             # Save the audio file temporarily
+#             temp_audio_path = tempfile.mktemp(suffix=".wav")
+#             audio_file.save(temp_audio_path)
+            
+#             # Convert speech to text
+#             user_input = speech_to_text(temp_audio_path)
+            
+#             # Remove the temporary file
+#             os.remove(temp_audio_path)
+#         else:
+#             # Handle text input
+#             data = request.json
+#             user_input = data.get('message')
+#             thread_id = data.get('thread_id')
+#             is_voice_input = False
+
+#         if not user_input:
+#             return jsonify({"error": "No message provided"}), 400
+
+#         if not thread_id:
+#             thread_id = str(uuid.uuid4())
+
+#         config = {
+#             "configurable": {
+#                 "thread_id": thread_id,
+#             }
+#         }
+
+#         _printed = set()
+#         events = graph.stream(
+#             {"messages": ("user", user_input)}, config, stream_mode="values"
+#         )
+
+#         full_response = ""
+#         ai_response = ""
+#         requires_approval = False
+        
+#         for event in events:
+#             event_text = _print_event(event, _printed)
+#             if event_text:
+#                 full_response += event_text + "\n"
+#                 print(event_text)
+#                 logging.info(event_text)
+                
+#                 if "Ai Message" in event_text:
+#                     ai_response = event_text.split("Ai Message")[-1].strip()
+
+#         snapshot = graph.get_state(config)
+#         if snapshot.next:
+#             requires_approval = True
+#             user_input = data.get('confirmation', 'y')
+#             if user_input.strip() == "y":
+#                 result = graph.invoke(None, config)
+#             else:
+#                 result = graph.invoke(
+#                     {
+#                         "messages": [
+#                             ToolMessage(
+#                                 tool_call_id=event["messages"][-1].tool_calls[0]["id"],
+#                                 content=f"API call denied by user. Reasoning: '{user_input}'. Continue assisting, accounting for the user's input.",
+#                             )
+#                         ]
+#                     },
+#                     config,
+#                 )
+#             for event in result:
+#                 event_text = _print_event(event, _printed)
+#                 if event_text:
+#                     full_response += event_text + "\n"
+#                     print(event_text)
+#                     logging.info(event_text)
+                    
+#                     if "Ai Message" in event_text:
+#                         ai_response = event_text.split("Ai Message")[-1].strip()
+
+#         if not ai_response:
+#             ai_response = full_response
+
+#         # Extract the text content from ai_response
+#         if isinstance(ai_response, str):
+#             text_to_speak = ai_response
+#         elif isinstance(ai_response, list) and ai_response and 'text' in ai_response[0]:
+#             text_to_speak = ai_response[0]['text']
+#         else:
+#             text_to_speak = str(ai_response)
+
+#         # Generate speech from the text response
+#         audio_filename = text_to_speech_sync(text_to_speak)
+
+#         response = jsonify({
+#             "messages": ai_response,
+#             "thread_id": thread_id,
+#             "requires_approval": requires_approval,
+#             "audio_file": audio_filename
+#         })
+#         response.headers['Content-Type'] = 'application/json; charset=utf-8'
+#         return response
+
+#     except Exception as e:
+#         logging.error(f"Error in chat route: {str(e)}")
+#         return jsonify({"error": "An error occurred processing your request"}), 500
+
 @app.route('/chat', methods=['POST'])
 def chat():
-    data = request.json
-    user_input = data.get('message')
-    if not user_input:
-        return jsonify({"error": "No message provided"}), 400
-
-    thread_id = data.get('thread_id') or session.get('thread_id')
-    if not thread_id:
-        thread_id = str(uuid.uuid4())
-        session['thread_id'] = thread_id
-
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-        }
-    }
-
-    _printed = set()
-    events = graph.stream(
-        {"messages": ("user", user_input)}, config, stream_mode="values"
-    )
-
-    full_response = ""
-    ai_response = ""
-    requires_approval = False
     try:
+        if request.content_type.startswith('multipart/form-data'):
+            # Handle voice input
+            audio_file = request.files.get('audio')
+            thread_id = request.form.get('thread_id')
+            is_voice_input = True
+            if not audio_file:
+                return jsonify({"error": "No audio file provided"}), 400
+            
+            # Save the audio file temporarily
+            temp_audio_path = tempfile.mktemp(suffix=".wav")
+            audio_file.save(temp_audio_path)
+            
+            # Convert speech to text using OpenAI's Whisper
+            user_input = speech_to_text(temp_audio_path)
+            
+            # Remove the temporary file
+            os.remove(temp_audio_path)
+        else:
+            # Handle text input
+            data = request.json
+            user_input = data.get('message')
+            thread_id = data.get('thread_id')
+            is_voice_input = False
+
+        if not user_input:
+            return jsonify({"error": "No message provided"}), 400
+
+        if not thread_id:
+            thread_id = str(uuid.uuid4())
+
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            }
+        }
+
+        _printed = set()
+        events = graph.stream(
+            {"messages": ("user", user_input)}, config, stream_mode="values"
+        )
+
+        full_response = ""
+        ai_response = ""
+        requires_approval = False
+        
         for event in events:
             event_text = _print_event(event, _printed)
             if event_text:
                 full_response += event_text + "\n"
-                print(event_text)  # Print to terminal
-                logging.info(event_text)  # Log to file
+                print(event_text)
+                logging.info(event_text)
                 
-                # Extract AI's response
                 if "Ai Message" in event_text:
                     ai_response = event_text.split("Ai Message")[-1].strip()
 
         snapshot = graph.get_state(config)
         if snapshot.next:
             requires_approval = True
-            user_input = data.get('confirmation', 'y')  # Default to 'y' for simplicity
+            user_input = data.get('confirmation', 'y')
             if user_input.strip() == "y":
                 result = graph.invoke(None, config)
             else:
@@ -937,29 +1245,129 @@ def chat():
                 event_text = _print_event(event, _printed)
                 if event_text:
                     full_response += event_text + "\n"
-                    print(event_text)  # Print to terminal
-                    logging.info(event_text)  # Log to file
+                    print(event_text)
+                    logging.info(event_text)
                     
-                    # Extract AI's response from the result
                     if "Ai Message" in event_text:
                         ai_response = event_text.split("Ai Message")[-1].strip()
+
+        if not ai_response:
+            ai_response = full_response
+
+        # Extract the text content from ai_response
+        if isinstance(ai_response, str):
+            text_to_speak = ai_response
+        elif isinstance(ai_response, list) and ai_response and 'text' in ai_response[0]:
+            text_to_speak = ai_response[0]['text']
+        else:
+            text_to_speak = str(ai_response)
+
+        # Generate speech from the text response
+        audio_filename = text_to_speech_sync(text_to_speak)
+
+        response = jsonify({
+            "messages": ai_response,
+            "thread_id": thread_id,
+            "requires_approval": requires_approval,
+            "audio_file": audio_filename
+        })
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return response
 
     except Exception as e:
         logging.error(f"Error in chat route: {str(e)}")
         return jsonify({"error": "An error occurred processing your request"}), 500
-
-    # If no AI response was extracted, use the full response
-    if not ai_response:
-        ai_response = full_response
-
-    response = jsonify({
-        "messages": ai_response,
-        "thread_id": thread_id,
-        "requires_approval": requires_approval
-    })
-    response.headers['Content-Type'] = 'application/json; charset=utf-8'
-    return response
+    
+@app.route('/audio/<path:filename>')
+def serve_audio(filename):
+    audio_directory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'audio')
+    return send_from_directory(audio_directory, filename, mimetype="audio/mp3")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))  # Change this to 5000
     app.run(host='0.0.0.0', port=port)
+
+
+# # Define a route to handle chat messages
+# @app.route('/chat', methods=['POST'])
+# def chat():
+#     data = request.json
+#     user_input = data.get('message')
+#     if not user_input:
+#         return jsonify({"error": "No message provided"}), 400
+
+#     thread_id = data.get('thread_id') or session.get('thread_id')
+#     if not thread_id:
+#         thread_id = str(uuid.uuid4())
+#         session['thread_id'] = thread_id
+
+#     config = {
+#         "configurable": {
+#             "thread_id": thread_id,
+#         }
+#     }
+
+#     _printed = set()
+#     events = graph.stream(
+#         {"messages": ("user", user_input)}, config, stream_mode="values"
+#     )
+
+#     full_response = ""
+#     ai_response = ""
+#     requires_approval = False
+#     try:
+#         for event in events:
+#             event_text = _print_event(event, _printed)
+#             if event_text:
+#                 full_response += event_text + "\n"
+#                 print(event_text)  # Print to terminal
+#                 logging.info(event_text)  # Log to file
+                
+#                 # Extract AI's response
+#                 if "Ai Message" in event_text:
+#                     ai_response = event_text.split("Ai Message")[-1].strip()
+
+#         snapshot = graph.get_state(config)
+#         if snapshot.next:
+#             requires_approval = True
+#             user_input = data.get('confirmation', 'y')  # Default to 'y' for simplicity
+#             if user_input.strip() == "y":
+#                 result = graph.invoke(None, config)
+#             else:
+#                 result = graph.invoke(
+#                     {
+#                         "messages": [
+#                             ToolMessage(
+#                                 tool_call_id=event["messages"][-1].tool_calls[0]["id"],
+#                                 content=f"API call denied by user. Reasoning: '{user_input}'. Continue assisting, accounting for the user's input.",
+#                             )
+#                         ]
+#                     },
+#                     config,
+#                 )
+#             for event in result:
+#                 event_text = _print_event(event, _printed)
+#                 if event_text:
+#                     full_response += event_text + "\n"
+#                     print(event_text)  # Print to terminal
+#                     logging.info(event_text)  # Log to file
+                    
+#                     # Extract AI's response from the result
+#                     if "Ai Message" in event_text:
+#                         ai_response = event_text.split("Ai Message")[-1].strip()
+
+#     except Exception as e:
+#         logging.error(f"Error in chat route: {str(e)}")
+#         return jsonify({"error": "An error occurred processing your request"}), 500
+
+#     # If no AI response was extracted, use the full response
+#     if not ai_response:
+#         ai_response = full_response
+
+#     response = jsonify({
+#         "messages": ai_response,
+#         "thread_id": thread_id,
+#         "requires_approval": requires_approval
+#     })
+#     response.headers['Content-Type'] = 'application/json; charset=utf-8'
+#     return response
