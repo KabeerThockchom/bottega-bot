@@ -1,6 +1,7 @@
 // import React, { useState, useEffect, useRef } from 'react';
 // import { Send, Loader } from 'lucide-react';
 // import ReactMarkdown from 'react-markdown';
+// import remarkGfm from 'remark-gfm';
 // import './ChatBot.css';
 
 // const TypingIndicator = () => (
@@ -16,7 +17,7 @@
 //         {isUser ? (
 //           <p>{message}</p>
 //         ) : (
-//           <ReactMarkdown>{message}</ReactMarkdown>
+//           <ReactMarkdown remarkPlugins={[remarkGfm]}>{message}</ReactMarkdown>
 //         )}
 //       </div>
 //     </div>
@@ -61,7 +62,7 @@
 //       }
 //     }
   
-//     cleanedMessage = cleanedMessage.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+//     cleanedMessage = cleanedMessage.trim();
 //     cleanedMessage = cleanedMessage.replace(/^==================================\s*/, '');
   
 //     console.log('Original message:', message);
@@ -111,7 +112,7 @@
 //         <h2 className="text-2xl font-bold gradient-text">
 //           Bottega Bot <span role="img" aria-label="robot">🤖</span> Bottega Restaurant AI
 //         </h2>
-//         <p className="gradient-text text-sm mt-1">powered by Zorro AI</p>
+//         <p className="gradient-text text-sm mt-1">created by Kabeer Thockchom</p>
 //       </div>
 //       <div className="gradient-separator"></div>
 //       <div className="flex-grow overflow-auto p-4" id="chat-container">
@@ -145,9 +146,8 @@
 // };
 
 // export default BytesThemedChatbot;
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader } from 'lucide-react';
+import { Send, Loader, Mic, MicOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './ChatBot.css';
@@ -178,7 +178,10 @@ const BytesThemedChatbot = () => {
   const [threadId, setThreadId] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isBotResponding, setIsBotResponding] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(null);
   const messagesEndRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
 
   useEffect(() => {
     setThreadId(generateThreadId());
@@ -233,24 +236,100 @@ const BytesThemedChatbot = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: input, thread_id: threadId }),
+        body: JSON.stringify({ message: input, thread_id: threadId, is_voice_input: false }),
       });
 
       const data = await response.json();
-      console.log('Received data:', data);
-      
-      if (data.thread_id) setThreadId(data.thread_id);
-      
-      if (data.messages) {
-        const cleanedMessage = cleanBotMessage(data.messages);
-        setMessages(prev => [...prev, { text: cleanedMessage, isUser: false }]);
-      }
-
+      handleBotResponse(data);
     } catch (error) {
       console.error('Error:', error);
+      setMessages(prev => [...prev, { text: "Sorry, there was an error processing your request. Please try again.", isUser: false }]);
     } finally {
       setIsTyping(false);
       setIsBotResponding(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      const chunks = [];
+
+      mediaRecorderRef.current.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorderRef.current.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(blob);
+        setAudioUrl(audioUrl);
+        handleVoiceSubmit(blob);
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Error accessing microphone. Please check your permissions.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleVoiceSubmit = async (audioBlob) => {
+    setIsBotResponding(true);
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.wav');
+    formData.append('thread_id', threadId);
+    formData.append('is_voice_input', 'true');
+
+    try {
+      const response = await fetch('/chat', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      handleBotResponse(data);
+    } catch (error) {
+      console.error('Error:', error);
+      setMessages(prev => [...prev, { text: "Sorry, there was an error processing your voice input. Please try again.", isUser: false }]);
+    } finally {
+      setIsBotResponding(false);
+    }
+  };
+
+  // const handleBotResponse = (data) => {
+  //   console.log('Received data:', data);
+    
+  //   if (data.thread_id) setThreadId(data.thread_id);
+    
+  //   if (data.messages) {
+  //     const cleanedMessage = cleanBotMessage(data.messages);
+  //     setMessages(prev => [...prev, { text: cleanedMessage, isUser: false }]);
+  //   }
+
+  //   if (data.audio_file) {
+  //     const audio = new Audio(`/audio/${data.audio_file}`);
+  //     audio.play().catch(e => console.error("Error playing audio:", e));
+  //   }
+  // };
+  const handleBotResponse = (data) => {
+    console.log('Received data:', data);
+    
+    if (data.thread_id) setThreadId(data.thread_id);
+    
+    if (data.messages) {
+      const cleanedMessage = cleanBotMessage(data.messages);
+      setMessages(prev => [...prev, { text: cleanedMessage, isUser: false }]);
+    }
+  
+    if (data.audio_file) {
+      const audio = new Audio(`/audio/${data.audio_file}`);
+      audio.play().catch(e => console.error("Error playing audio:", e));
     }
   };
   
@@ -278,12 +357,20 @@ const BytesThemedChatbot = () => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             className="chat-input flex-grow mr-2 p-2"
-            disabled={isBotResponding}
+            disabled={isBotResponding || isRecording}
           />
+          <button 
+            type="button" 
+            className={`voice-button mr-2 ${isRecording ? 'recording' : ''}`}
+            onClick={isRecording ? stopRecording : startRecording}
+            disabled={isBotResponding}
+          >
+            {isRecording ? <MicOff size={24} /> : <Mic size={24} />}
+          </button>
           <button 
             type="submit" 
             className={`send-button ${isBotResponding ? 'disabled' : ''}`}
-            disabled={isBotResponding}
+            disabled={isBotResponding || isRecording}
           >
             {isBotResponding ? <Loader size={24} className="animate-spin" /> : <Send size={24} />}
           </button>
