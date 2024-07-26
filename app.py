@@ -14,6 +14,7 @@ from typing_extensions import TypedDict
 
 # Langchain imports
 from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.messages import ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -42,6 +43,10 @@ import stripe
 from stripe.error import StripeError
 from datetime import datetime
 import logging
+
+# Geopy imports
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
 
 # Load environment variables from .env file
 load_dotenv()
@@ -89,7 +94,45 @@ def standardize_phone_number(phone: str) -> str:
         return f"+{digits}"
     else:
         raise ValueError("Invalid phone number format")
+
+
+
+@tool
+def check_delivery_distance(customer_address: str) -> str:
+    """
+    Check if the customer's address is within the 20-mile delivery radius of the restaurant.
     
+    Args:
+    customer_address (str): The customer's delivery address.
+    
+    Returns:
+    str: A message indicating whether delivery is possible or not.
+    """
+    restaurant_address = "2020 Mission St, San Francisco, CA 94110, United States"
+    max_delivery_distance = 20  # miles
+    
+    geolocator = Nominatim(user_agent="bottega_restaurant")
+    
+    try:
+        restaurant_location = geolocator.geocode(restaurant_address)
+        customer_location = geolocator.geocode(customer_address)
+        
+        if not customer_location:
+            return "Unable to locate the provided address. Please check and try again."
+        
+        distance = geodesic(
+            (restaurant_location.latitude, restaurant_location.longitude),
+            (customer_location.latitude, customer_location.longitude)
+        ).miles
+        
+        if distance <= max_delivery_distance:
+            return f"Great news! Your address is within our delivery range. The distance is {distance:.2f} miles."
+        else:
+            return f"We apologize, but your address is outside our delivery range. The distance is {distance:.2f} miles, and our maximum delivery range is {max_delivery_distance} miles."
+    
+    except Exception as e:
+        return f"An error occurred while checking the delivery distance: {str(e)}"
+
 @tool
 def create_or_update_customer(name: str, phone: str, address: Optional[str] = None) -> str:
     """
@@ -659,6 +702,7 @@ class Assistant:
 
 # Initialize the LLMs
 llm = ChatAnthropic(model="claude-3-5-sonnet-20240620", temperature=1)
+# llm = ChatOpenAI(model="gpt-4o-mini",temperature=1)
 
 assistant_prompt = ChatPromptTemplate.from_messages(
     [
@@ -676,7 +720,8 @@ assistant_prompt = ChatPromptTemplate.from_messages(
             "9. **Update cart:** Modify cart items with the `update_cart_item` tool.\n"
             "10. **Place orders:** Assist in placing orders using the `place_order` tool.\n"
             "11. **Update customer address:** Update customer's address with the `update_customer_address` tool.\n"
-            "12. **Check order status:** Provide order status updates using the `get_order_status` tool.\n\n"
+            "12. **Check order status:** Provide order status updates using the `get_order_status` tool.\n"
+            "13. **Check delivery distance:** Verify if a customer's address is within the delivery range using the `check_delivery_distance` tool.\n\n"
             "Always ask for the customer's name and phone number to create or retrieve their profile. Respond in the customer's preferred language and use emojis frequently to make the conversation engaging, friendly, and fun. 😊🍝🍕\n\n"
             "Format your responses using advanced Markdown features:\n\n"
             "- Use **bold** for emphasis and important information.\n"
@@ -710,7 +755,11 @@ assistant_prompt = ChatPromptTemplate.from_messages(
             "9. **View Cart**: After adding items, use `view_cart` to show the current cart contents. 👀\n"
             "10. **Update Cart**: If needed, use `update_cart_item` to modify quantities, options, or remove items. ✏️🛒\n"
             "11. **Place Order**: Ask if the order is for delivery or pickup. 🚚 or 🏃\n"
-            "    - For delivery, check if there's an address on file. If not, ask for it and use `update_customer_address`. 🏠\n"
+            "    - For delivery:\n"
+            "      a. Ask for the delivery address if not already on file.\n"
+            "      b. Use `check_delivery_distance` to verify if the address is within the delivery range. 🗺️\n"
+            "      c. If within range, update the address using `update_customer_address` if necessary. 🏠\n"
+            "      d. If out of range, inform the customer and offer pickup as an alternative.\n"
             "    - For pickup, remind the customer of the restaurant address (2020 Mission St, San Francisco, CA 94110, United States). 🗺️\n"
             "    - Confirm order details and use `place_order` to create the order. ✅\n"
             "12. **Order Confirmation**: After placing the order, inform the customer: 📱💳\n"
@@ -739,7 +788,8 @@ safe_tools = [
     fetch_customer_orders,
     create_or_update_customer,
     update_customer_address,
-    place_order
+    place_order,
+    check_delivery_distance
 ]
 
 sensitive_tools = [
@@ -911,5 +961,5 @@ def chat():
     return response
 
 if __name__ == '__main__':
-    port = int(os.environ.get('FLASK_PORT', 10000))  # Change this to 5000
+    port = int(os.environ.get('PORT', 10000))  # Change this to 5000
     app.run(host='0.0.0.0', port=port)
