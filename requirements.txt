@@ -10,3 +10,5 @@ flask-cors
 twilio
 python-dotenv
 stripe
+langchain-groq
+geopy
