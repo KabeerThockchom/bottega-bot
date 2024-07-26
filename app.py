@@ -268,6 +268,7 @@ def update_customer_address(customer_id: int, address: str) -> str:
 def check_customer_exists(phone: str) -> bool:
     """Check if a customer exists based on phone number."""
     with get_db_connection() as conn:
+        standardize_phone_number(phone)
         cursor = conn.cursor()
         cursor.execute("SELECT 1 FROM Customers WHERE Phone = ?", (phone,))
         return cursor.fetchone() is not None
